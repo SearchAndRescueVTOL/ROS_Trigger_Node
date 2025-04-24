@@ -2,14 +2,15 @@
 #include <px4_msgs/msg/camera_trigger.hpp>
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <px4_msgs/msg/sensor_gps.hpp>
+#include <px4_msgs/msg/vehicle_attitude.hpp>
 #include <deque>
 #include <optional>
 #include <limits>
 #include <fstream>
 #include <inttypes.h> 
 using CameraTrigger = px4_msgs::msg::CameraTrigger;
-using NavSatFix     = px4_msgs::msg::SensorGps;
-
+using NavSatFix = px4_msgs::msg::SensorGps;
+using VehicleAttitude = px4_msgs::msg::VehicleAttitude;
 class ImageGpsSync : public rclcpp::Node
 {
 public:
@@ -34,9 +35,20 @@ public:
         trigger_counter +=1;
         last_trigger_us_ = msg->timestamp;
         auto gpsCoord = GetGPS(delay);
+	auto vehicleAttitude = GetAttitude(delay);
         if (gpsCoord){
-          file_ << trigger_counter << "," << gpsCoord->latitude_deg << "," << gpsCoord->longitude_deg 
-                << "," << gpsCoord->altitude_msl_m << "," << gpsCoord->heading << "," <<  gpsCoord-> timestamp << std::endl;
+		if (vehicleAttitude){
+			file_ << trigger_counter << "," << gpsCoord->latitude_deg << "," << gpsCoord->longitude_deg 
+                		<< "," << gpsCoord->altitude_msl_m << "," << gpsCoord->heading << "," <<  gpsCoord-> timestamp;
+			for(int m = 0; m < 4; m++){
+				file_ << "," << vehicleAttitude->q[m] << "," << vehicleAttitude->delta_q_reset[m];
+			}
+			file_ << std::endl;
+		}
+		else{
+        		file_ << trigger_counter << "," << gpsCoord->latitude_deg << "," << gpsCoord->longitude_deg 
+                	<< "," << gpsCoord->altitude_msl_m << "," << gpsCoord->heading << "," <<  gpsCoord-> timestamp << std::endl;
+		}
           // RCLCPP_INFO(get_logger(), "[CameraTrigger] GPS MATCH on seq %d!", msg->seq);
         }
         else{
@@ -54,6 +66,17 @@ public:
         gps_buffer_.push_back(*msg);
         if (gps_buffer_.size() > max_buffer_) {
           gps_buffer_.pop_front();
+        }
+      });
+    rmw_qos_profile_t qos_profile3 = rmw_qos_profile_sensor_data;
+    auto qos3 = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile3.history, 10), qos_profile3);
+    attitude_sub_ = create_subscription<VehicleAttitude>(
+      "/fmu/out/vehicle_attitude", qos3,
+      [&](VehicleAttitude::UniquePtr msg){
+      	// RCLCPP_INFO(get_logger(), "Received attitude");
+        attitude_buffer_.push_back(*msg);
+        if (attitude_buffer_.size() > max_buffer_){
+          attitude_buffer_.pop_front();
         }
       });
   }
@@ -105,7 +128,27 @@ private:
     }
     return best;
   }
-
+  std::optional<VehicleAttitude> ros_get_attitude(uint64_t query_ns){
+  std::optional<VehicleAttitude> best;
+	uint64_t best_diff = std::numeric_limits<uint64_t>::max();
+	for (auto f = attitude_buffer_.rbegin(); f != attitude_buffer_.rend(); ++f){
+		uint64_t t = static_cast<uint64_t>((*f).timestamp) * 1000L;
+		uint64_t diff = (t > query_ns) ? (t - query_ns) : (query_ns - t);
+    // RCLCPP_INFO(get_logger(), "Attitude diff: %" PRIu64 "", best_diff);
+		if (diff < best_diff){
+			best_diff = diff;
+			best = *f;
+		}
+		else{
+			break;
+		}
+	}
+	return best;
+  }
+  std::optional<VehicleAttitude> GetAttitude(double delay_s){
+  	uint64_t trig_ns = (ros_find_last_trigger_time() * 1000ULL) + static_cast<uint64_t>(delay_s * 1e9);
+	  return ros_get_attitude(trig_ns);
+  }
   std::optional<NavSatFix> GetGPS(double delay_s)
   {
     uint64_t trig_us = ros_find_last_trigger_time();
@@ -116,9 +159,11 @@ private:
 
   rclcpp::Subscription<CameraTrigger>::SharedPtr cam_sub_;
   rclcpp::Subscription<NavSatFix>::SharedPtr gps_sub_;
+  rclcpp::Subscription<VehicleAttitude>::SharedPtr attitude_sub_;
   const double delay = 0.0;
   uint64_t last_trigger_us_{0};
   std::deque<NavSatFix> gps_buffer_;
+  std::deque<VehicleAttitude> attitude_buffer_;
   static constexpr size_t max_buffer_ = 1000;
 };
 
