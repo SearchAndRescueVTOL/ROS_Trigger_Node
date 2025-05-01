@@ -38,15 +38,15 @@ public:
 	auto vehicleAttitude = GetAttitude(delay);
         if (gpsCoord){
 		if (vehicleAttitude){
-			file_ << trigger_counter << "," << gpsCoord->latitude_deg << "," << gpsCoord->longitude_deg 
+			file_ << std::setprecision(std::numeric_limits<double>::max_digits10) << trigger_counter << "," << gpsCoord->latitude_deg << "," << gpsCoord->longitude_deg 
                 		<< "," << gpsCoord->altitude_msl_m << "," << gpsCoord->heading << "," <<  gpsCoord-> timestamp;
 			for(int m = 0; m < 4; m++){
-				file_ << "," << vehicleAttitude->q[m] << "," << vehicleAttitude->delta_q_reset[m];
+				file_ << std::setprecision(std::numeric_limits<double>::max_digits10) << "," << vehicleAttitude->q[m] << "," << vehicleAttitude->delta_q_reset[m];
 			}
 			file_ << std::endl;
 		}
 		else{
-        		file_ << trigger_counter << "," << gpsCoord->latitude_deg << "," << gpsCoord->longitude_deg 
+        		file_ << std::setprecision(std::numeric_limits<double>::max_digits10) << trigger_counter << "," << gpsCoord->latitude_deg << "," << gpsCoord->longitude_deg 
                 	<< "," << gpsCoord->altitude_msl_m << "," << gpsCoord->heading << "," <<  gpsCoord-> timestamp << std::endl;
 		}
           // RCLCPP_INFO(get_logger(), "[CameraTrigger] GPS MATCH on seq %d!", msg->seq);
